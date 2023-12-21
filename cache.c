@@ -5,6 +5,7 @@ void initialize_cache(Cache* cache) { cache->count = 0; }
 
 MemStruct* get_data_from_cache(Cache* cache, const char* url) {
     pthread_mutex_lock(&cache_mutex);
+    
     for (int i = 0; i < cache->count; ++i) {
     if (strcmp(cache->cache[i].url, url) == 0) {
         cache->cache[i].count++;
@@ -13,6 +14,7 @@ MemStruct* get_data_from_cache(Cache* cache, const char* url) {
     }
     }
     pthread_mutex_unlock(&cache_mutex);
+    
     return NULL;
 }
 void destroy_cache(Cache* cache) {
