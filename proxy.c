@@ -73,12 +73,10 @@ void* fetchAndCacheData(void* arg) {
   }
   printf(ANSI_COLOR_GREEN
          "Create new connection with remote server\n" ANSI_COLOR_RESET);
-
   ssize_t bytes_sent = write(dest_socket, request, strlen(request));
   if (bytes_sent == -1) {
     printf(ANSI_COLOR_RED
            "Error while sending request to remote server\n" ANSI_COLOR_RESET);
-
     free(record->memory);
     free(record);
     close(client_socket);
@@ -86,7 +84,6 @@ void* fetchAndCacheData(void* arg) {
     sem_post(&thread_semaphore);
     return NULL;
   }
-
   printf(ANSI_COLOR_GREEN
          "Send request to remote server, len = %ld\n" ANSI_COLOR_RESET,
          bytes_sent);
@@ -95,10 +92,16 @@ void* fetchAndCacheData(void* arg) {
   memset(buffer, 0, BUFFER_SIZE);
   ssize_t bytes_read, all_bytes_read = 0;
   while ((bytes_read = read(dest_socket, buffer, BUFFER_SIZE)) > 0) {
-    // printf(ANSI_COLOR_GREEN
-    //        "\tRead response from remote server, len = %ld\n"
-    //        ANSI_COLOR_RESET, bytes_read);
-    // printf(ANSI_COLOR_GREEN "\tBuffer: %s\n" ANSI_COLOR_RESET, buffer);
+      if (all_bytes_read + bytes_read > CACHE_BUFFER_SIZE) {
+        printf(ANSI_COLOR_RED
+               "Data size exceeds CACHE_BUFFER_SIZE, freeing memory\n" ANSI_COLOR_RESET);
+        free(record->memory);
+        free(record);
+        close(client_socket);
+        close(dest_socket);
+        sem_post(&thread_semaphore);
+        return NULL;
+      }
     bytes_sent = write(client_socket, buffer, bytes_read);
     if (bytes_sent == -1) {
       printf(ANSI_COLOR_RED
@@ -112,7 +115,6 @@ void* fetchAndCacheData(void* arg) {
       return NULL;
     } else {
       add_response(record, buffer, all_bytes_read, bytes_read);
-
       if (strstr(buffer, "ERROR") != NULL ||
           strstr(buffer, "Not Found") != NULL) {
         printf(ANSI_COLOR_RED
@@ -130,21 +132,33 @@ void* fetchAndCacheData(void* arg) {
     }
     all_bytes_read += bytes_read;
   }
+    if (all_bytes_read > CACHE_BUFFER_SIZE) {
+      printf(ANSI_COLOR_RED
+             "Data size exceeds CACHE_BUFFER_SIZE, freeing memory\n" ANSI_COLOR_RESET);
+      free(record->memory);
+      free(record);
+      close(client_socket);
+      close(dest_socket);
+      sem_post(&thread_semaphore);
+      return NULL;
+    }
   add_size(record, all_bytes_read);
   char* ref = get_refer_url(request);
   add_to_cache(cache, ref, record);
 
+  printf("Data added to cache with size %ld\n\n", record->size);
+
   printf(ANSI_COLOR_MAGENTA "Sending data to client...\n" ANSI_COLOR_RESET);
-  printf("%s\n", ref);
-  MemStruct* mem = get_data_from_cache(cache, ref);
-  send_header_with_data(client_socket, mem);
+
+  send_header_with_data(client_socket, get_data_from_cache(cache, ref));
   printf(ANSI_COLOR_MAGENTA "Data sent to client.\n" ANSI_COLOR_RESET);
   close(client_socket);
   close(dest_socket);
   sem_post(&thread_semaphore);
-  free(ref);
+
   return NULL;
 }
+
 
 void send_header_with_data(int client_socket, MemStruct* data2) {
   write(client_socket, data2->memory, data2->size);
@@ -168,7 +182,6 @@ void handle_client_request(int client_socket, Cache* cache) {
   char* url = extractReference(buffer, "GET ", 'H');  // get_refer_url(buffer);
 
   if (url != NULL) {
-    // printf(ANSI_COLOR_CYAN "URL found: |%s|\n" ANSI_COLOR_RESET, url);
     MemStruct* data = get_data_from_cache(cache, url);
 
     if (data != NULL) {
