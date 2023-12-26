@@ -4,16 +4,13 @@ pthread_mutex_t cache_mutex = PTHREAD_MUTEX_INITIALIZER;
 void initialize_cache(Cache* cache) { cache->count = 0; }
 
 MemStruct* get_data_from_cache(Cache* cache, const char* url) {
-    pthread_mutex_lock(&cache_mutex);
     
     for (int i = 0; i < cache->count; ++i) {
     if (strcmp(cache->cache[i].url, url) == 0) {
         cache->cache[i].count++;
-        sleep(3);
         return cache->cache[i].data;
     }
     }
-    pthread_mutex_unlock(&cache_mutex);
     
     return NULL;
 }
@@ -78,4 +75,3 @@ void add_to_cache(Cache* cache, char* url, MemStruct* data) {
      
      pthread_mutex_unlock(&cache_mutex);
    }
-
