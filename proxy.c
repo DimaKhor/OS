@@ -54,7 +54,7 @@ void add_response(MemStruct* record, char* resp, unsigned long cur_position,
 
 void add_size(MemStruct* record, ssize_t size) { record->size = size; }
 
-void* fetchAndCacheData(void* arg) {
+void* fetch_and_cache_data(void* arg) {
   ThreadArgs* args = (ThreadArgs*)arg;
   Cache* cache = args->cache;
   char* request = args->request;
@@ -73,10 +73,12 @@ void* fetchAndCacheData(void* arg) {
   }
   printf(ANSI_COLOR_GREEN
          "Create new connection with remote server\n" ANSI_COLOR_RESET);
+
   ssize_t bytes_sent = write(dest_socket, request, strlen(request));
   if (bytes_sent == -1) {
     printf(ANSI_COLOR_RED
            "Error while sending request to remote server\n" ANSI_COLOR_RESET);
+
     free(record->memory);
     free(record);
     close(client_socket);
@@ -84,6 +86,7 @@ void* fetchAndCacheData(void* arg) {
     sem_post(&thread_semaphore);
     return NULL;
   }
+
   printf(ANSI_COLOR_GREEN
          "Send request to remote server, len = %ld\n" ANSI_COLOR_RESET,
          bytes_sent);
@@ -102,19 +105,30 @@ void* fetchAndCacheData(void* arg) {
         sem_post(&thread_semaphore);
         return NULL;
       }
+    // printf(ANSI_COLOR_GREEN
+    //        "\tRead response from remote server, len = %ld\n"
+    //        ANSI_COLOR_RESET, bytes_read);
+    // printf(ANSI_COLOR_GREEN "\tBuffer: %s\n" ANSI_COLOR_RESET, buffer);
     bytes_sent = write(client_socket, buffer, bytes_read);
     if (bytes_sent == -1) {
-      printf(ANSI_COLOR_RED
-             "Error while sending data to client\n" ANSI_COLOR_RESET);
+      if (errno == EPIPE) {
+        printf(ANSI_COLOR_YELLOW
+               "Broken pipe - client disconnected\n" ANSI_COLOR_RESET);
+      } else {
+        printf(ANSI_COLOR_RED
+               "Error while sending data to client\n" ANSI_COLOR_RESET);
+      }
+      // printf(ANSI_COLOR_RED
+      //        "Error while sending data to client\n" ANSI_COLOR_RESET);
       free(record->memory);
       free(record);
       close(client_socket);
       close(dest_socket);
       sem_post(&thread_semaphore);
-
       return NULL;
     } else {
       add_response(record, buffer, all_bytes_read, bytes_read);
+
       if (strstr(buffer, "ERROR") != NULL ||
           strstr(buffer, "Not Found") != NULL) {
         printf(ANSI_COLOR_RED
@@ -126,7 +140,6 @@ void* fetchAndCacheData(void* arg) {
         close(client_socket);
         close(dest_socket);
         sem_post(&thread_semaphore);
-
         return NULL;
       }
     }
@@ -145,17 +158,18 @@ void* fetchAndCacheData(void* arg) {
   add_size(record, all_bytes_read);
   char* ref = get_refer_url(request);
   add_to_cache(cache, ref, record);
-
-  printf("Data added to cache with size %ld\n\n", record->size);
+    
+    printf("Data added to cache with size %ld\n\n", record->size);
 
   printf(ANSI_COLOR_MAGENTA "Sending data to client...\n" ANSI_COLOR_RESET);
-
-  send_header_with_data(client_socket, get_data_from_cache(cache, ref));
+  printf("%s\n", ref);
+  MemStruct* mem = get_data_from_cache(cache, ref);
+  send_header_with_data(client_socket, mem);
   printf(ANSI_COLOR_MAGENTA "Data sent to client.\n" ANSI_COLOR_RESET);
   close(client_socket);
   close(dest_socket);
   sem_post(&thread_semaphore);
-
+  free(ref);
   return NULL;
 }
 
@@ -203,7 +217,7 @@ void handle_client_request(int client_socket, Cache* cache) {
       pthread_attr_init(&attr);
       pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
       printf(ANSI_COLOR_BLUE "Initing new thread\n" ANSI_COLOR_RESET);
-      int err = pthread_create(&tid, NULL, &fetchAndCacheData, args);
+      int err = pthread_create(&tid, NULL, &fetch_and_cache_data, args);
       if (err != 0) {
         fprintf(stderr, "Error creating thread: %s\n", strerror(err));
         free(args->request);
